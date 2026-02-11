@@ -1,0 +1,26 @@
+{
+  "name": "ciec.now---0.0.0.1",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "gcloud run deploy ciec-now --source . --project regal-throne-466713-a4 --region us-central1 --allow-unauthenticated"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2",
+    "@tanstack/react-query": "^5.90.20",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

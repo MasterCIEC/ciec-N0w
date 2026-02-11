@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirma tu Registro en CIEC.Now</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6;">
+    <tr>
+      <td align="center" style="padding: 20px;">
+        <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px;">
+          <!-- Header with Logo -->
+          <tr>
+            <td align="center" style="padding: 30px 20px 20px 20px;">
+              <img src="https://zsbyslmvvfzhpenfpxzm.supabase.co/storage/v1/object/sign/LOGO%20ciec/LogotipoBLUE@1.5x.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9hMjE5ZTgyYy1jOWQzLTRiMjItOTQ0ZC03YzZjZmVmYmNjYzEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJMT0dPIGNpZWMvTG9nb3RpcG9CTFVFQDEuNXgucG5nIiwiaWF0IjoxNzU1MDk5OTA3LCJleHAiOjIwNzA0NTk5MDd9.sQsghIZa4DDmezbrvGXteKpIgdMdaXuFlHVML_8q5_Q" alt="CIEC.Now Logo" style="width: 200px; max-width: 200px; height: auto;">
+            </td>
+          </tr>
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 40px;">
+              <h2 style="font-size: 24px; color: #1e3a8a; margin-top: 0;">Confirma tu Registro</h2>
+              <p style="color: #334155; font-size: 16px; line-height: 1.5;">
+                ¡Ya casi estás listo para empezar! Solo necesitamos que confirmes tu dirección de correo electrónico para activar tu cuenta en CIEC.Now.
+              </p>
+              <p style="color: #334155; font-size: 16px; line-height: 1.5;">
+                Por favor, haz clic en el siguiente botón para completar el proceso:
+              </p>
+            </td>
+          </tr>
+          <!-- Call to Action Button -->
+          <tr>
+            <td align="center" style="padding: 20px 40px;">
+              <a href="{{ .ConfirmationURL }}" target="_blank" style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
+                Confirmar mi Correo
+              </a>
+            </td>
+          </tr>
+          <!-- Fallback Link -->
+          <tr>
+            <td style="padding: 20px 40px;">
+              <p style="color: #64748b; font-size: 12px; line-height: 1.5; text-align: center;">
+                Si el botón no funciona, copia y pega el siguiente enlace en tu navegador:
+                <br>
+                <a href="{{ .ConfirmationURL }}" target="_blank" style="color: #1d4ed8; text-decoration: underline; word-break: break-all;">{{ .ConfirmationURL }}</a>
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; border-top: 1px solid #e5e7eb; text-align: center;">
+              <p style="color: #64748b; font-size: 12px; margin: 0;">
+                Recibiste este correo porque te registraste en CIEC.Now. Si no fuiste tú, puedes ignorar este mensaje.
+              </p>
+              <p style="color: #64748b; font-size: 12px; margin-top: 4px;">
+                &copy; CIEC.Now - Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

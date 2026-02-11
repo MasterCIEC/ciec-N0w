@@ -1,0 +1,5 @@
+{
+  "name": "Plantilla Base React",
+  "description": "Una plantilla inicial profesional con React, Tailwind CSS y configuración lista para Gemini API.",
+  "requestFramePermissions": []
+}

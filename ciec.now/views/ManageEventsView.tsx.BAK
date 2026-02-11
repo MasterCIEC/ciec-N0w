@@ -1,0 +1,288 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabase } from '../supabaseClient';
+import { Event, MeetingCategory, EventCategory, Company, ScheduleEntry } from '../types';
+import { useNotification } from '../contexts/NotificationContext';
+import Modal from '../components/Modal';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import PlusIcon from '../components/icons/PlusIcon';
+import EditIcon from '../components/icons/EditIcon';
+import TrashIcon from '../components/icons/TrashIcon';
+import EmailIcon from '../components/icons/EmailIcon';
+import { generateId } from '../constants';
+import { usePeriod } from '../contexts/PeriodContext';
+import { useAuth } from '../contexts/AuthContext';
+import ParticipantSelectorModal, { SelectorParticipant } from '../components/ParticipantSelectorModal';
+
+// Hooks
+import { useEvents, useEventMutations } from '../hooks/useEvents';
+import { useParticipants } from '../hooks/useParticipants';
+import { useMeetingCategories } from '../hooks/useMeetingCategories';
+import { useEventCategories } from '../hooks/useEventCategories';
+import { useEventParticipants } from '../hooks/useEventParticipants';
+import { useEventRelations } from '../hooks/useEventRelations';
+import { useCompanies } from '../hooks/useCompanies';
+import { useParticipantMeetingCategories } from '../hooks/useParticipantMeetingCategories';
+import { useUsers } from '../hooks/useUsers';
+
+// Using local props mostly empty now, but keeping callback for navigation if needed or parent control
+interface ManageEventsViewProps {
+  onNavigateBack?: () => void;
+  // If we want to allow editing a specific event passed from parent, we can keep initialEventToEdit
+  // But App.tsx logic with state `eventToEdit` suggests we might pass it via route or Context.
+  // For now, let's keep it optional but we might prefer internal state.
+  // Current App.tsx integration passes `initialEventToEdit`.
+  initialEventToEdit?: Event | null; 
+  onClearEditingEvent?: () => void;
+  
+  // Handlers for categories? The Hooks handle mutations, so we can use them directly here.
+  // We can remove onAddMeetingCategory etc and use hooks.
+  onAddMeetingCategory?: (category: MeetingCategory) => void; 
+  onAddEventCategory?: (category: EventCategory) => void;
+}
+
+const getTodayDateString = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const day = today.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const initialEventFormState: Omit<Event, 'id'> = {
+  subject: '',
+  organizerType: 'meeting_category',
+  date: getTodayDateString(),
+  startTime: '',
+  endTime: '',
+  location: '',
+  externalParticipantsCount: 0,
+  description: '',
+  cost: undefined,
+  investment: undefined,
+  revenue: undefined,
+  is_cancelled: false,
+  flyer_url: '',
+};
+
+const TOTAL_STEPS_CREATE = 4;
+type ModalMode = 'create' | 'edit' | 'view';
+
+const normalizeString = (str: string): string => {
+  if (!str) return '';
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "");
+};
+
+const ManageEventsView: React.FC<ManageEventsViewProps> = ({
+  onNavigateBack,
+  initialEventToEdit,
+  onClearEditingEvent,
+  onAddMeetingCategory,
+  onAddEventCategory
+}) => {
+  const { isInCurrentPeriod } = usePeriod();
+  const { can } = useAuth();
+  const { notify } = useNotification();
+
+  // Data Hooks
+  const { data: events = [] } = useEvents();
+  const { data: participants = [] } = useParticipants();
+  const { data: meetingCategories = [] } = useMeetingCategories();
+  const { data: eventCategories = [] } = useEventCategories();
+  const { eventAttendees, eventInvitees } = useEventParticipants();
+  const { eventOrganizingMeetingCategories, eventOrganizingCategories } = useEventRelations();
+  const { data: companies = [] } = useCompanies();
+  const { data: participantMeetingCategories = [] } = useParticipantMeetingCategories();
+  
+  // Users hook needed for getUserName
+  const { data: users = [] } = useUsers();
+
+  const { createComplexEvent, updateComplexEvent, deleteComplexEvent } = useEventMutations();
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<ModalMode>('create');
+  const [eventForViewOrEdit, setEventForViewOrEdit] = useState<Event | null>(null);
+  const [formData, setFormData] = useState<Omit<Event, 'id'>>(initialEventFormState);
+  const [selectedOrganizerIdsState, setSelectedOrganizerIdsState] = useState<string[]>([]);
+  const [selectedInviteeIds, setSelectedInviteeIds] = useState<string[]>([]);
+  const [selectedAttendeesInPerson, setSelectedAttendeesInPerson] = useState<string[]>([]);
+  const [selectedAttendeesOnline, setSelectedAttendeesOnline] = useState<string[]>([]);
+
+  const [currentSchedules, setCurrentSchedules] = useState<ScheduleEntry[]>([]);
+  const [scheduleInput, setScheduleInput] = useState({ date: '', endDate: '', startTime: '', endTime: '' });
+  const [isDateRange, setIsDateRange] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedOrganizer, setSelectedOrganizer] = useState<{ type: string; id: string } | null>(null);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const [isEventParticipantSelectorModalOpen, setIsEventParticipantSelectorModalOpen] = useState(false);
+  const [eventParticipantSelectionMode, setEventParticipantSelectionMode] = useState<'attendeesInPerson' | 'attendeesOnline' | 'invitees' | null>(null);
+
+  const [isOrganizerSelectorModalOpen, setIsOrganizerSelectorModalOpen] = useState(false);
+  const [tempSelectedOrganizerIdsModal, setTempSelectedOrganizerIdsModal] = useState<string[]>([]);
+  const [organizerSearchTermModal, setOrganizerSearchTermModal] = useState('');
+
+  const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
+
+  const [isAddCatModalOpen, setIsAddCatModalOpen] = useState(false);
+  const [addCatModalType, setAddCatModalType] = useState<'meeting_category' | 'category' | null>(null);
+  const [newCatName, setNewCatName] = useState('');
+
+  const [isCompanyEvent, setIsCompanyEvent] = useState(false);
+  const [companySearchTerm, setCompanySearchTerm] = useState('');
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [companySuggestions, setCompanySuggestions] = useState<Company[]>([]);
+
+  const [tempOrganizerTypeModal, setTempOrganizerTypeModal] = useState<'meeting_category' | 'category'>('meeting_category');
+
+  const [flyerFile, setFlyerFile] = useState<File | null>(null);
+  const [flyerPreview, setFlyerPreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [notifyingEventId, setNotifyingEventId] = useState<string | null>(null);
+  const [modalAlert, setModalAlert] = useState<{ isOpen: boolean; title: string; message: string; onConfirm?: () => void } | null>(null);
+  const [isCategoryListVisible, setIsCategoryListVisible] = useState(false);
+
+  // Helper Functions reused
+  const getMeetingCategoryName = useCallback((id: string) => meetingCategories.find(c => c.id === id)?.name || 'Categoría de Reunión Desconocida', [meetingCategories]);
+  const getEventCategoryName = useCallback((id: string) => eventCategories.find(ec => ec.id === id)?.name || 'Categoría Desconocida', [eventCategories]);
+
+  // Handle Initial Edit (from props)
+  useEffect(() => {
+    if (initialEventToEdit) {
+        // Logic to setup form similar to handleOpenViewModal/Edit
+        setEventForViewOrEdit(initialEventToEdit);
+        setFormData({
+            subject: initialEventToEdit.subject, organizerType: initialEventToEdit.organizerType,
+            date: initialEventToEdit.date, startTime: initialEventToEdit.startTime,
+            endTime: initialEventToEdit.endTime || '', location: initialEventToEdit.location || '',
+            externalParticipantsCount: initialEventToEdit.externalParticipantsCount || 0,
+            description: initialEventToEdit.description || '',
+            cost: initialEventToEdit.cost, investment: initialEventToEdit.investment, revenue: initialEventToEdit.revenue,
+            is_cancelled: initialEventToEdit.is_cancelled,
+            flyer_url: initialEventToEdit.flyer_url,
+        });
+        // Populate organizers, invitees
+        const currentOrganizers = initialEventToEdit.organizerType === 'meeting_category'
+            ? eventOrganizingMeetingCategories.filter((eoc: any) => eoc.event_id === initialEventToEdit.id).map((eoc: any) => eoc.meeting_category_id)
+            : eventOrganizingCategories.filter((eoc: any) => eoc.event_id === initialEventToEdit.id).map((eoc: any) => eoc.category_id);
+        setSelectedOrganizerIdsState(currentOrganizers);
+
+        const currentInvitees = eventInvitees.filter(ei => ei.event_id === initialEventToEdit.id).map(ei => ei.participant_id);
+        setSelectedInviteeIds(currentInvitees);
+
+        const currentAttendees = eventAttendees.filter(ea => ea.event_id === initialEventToEdit.id);
+        setSelectedAttendeesInPerson(currentAttendees.filter(ea => ea.attendance_type === 'in_person').map(ea => ea.participant_id));
+        setSelectedAttendeesOnline(currentAttendees.filter(ea => ea.attendance_type === 'online').map(ea => ea.participant_id));
+
+        setFlyerFile(null);
+        setFlyerPreview(initialEventToEdit.flyer_url || null);
+        setModalMode('edit');
+        setCurrentStep(1);
+        setFormErrors({});
+        setIsModalOpen(true);
+    }
+  }, [initialEventToEdit, eventAttendees, eventInvitees, eventOrganizingMeetingCategories, eventOrganizingCategories]);
+
+  // Sync Logic from original file... 
+  // (Copied getDisplayOrganizerNameForEvent, etc.)
+  const getDisplayOrganizerNameForEvent = useCallback((eventItem: Event): string => {
+    if (!eventItem) return 'Categoría no disponible';
+    if (eventItem.organizerType === 'meeting_category') {
+      const orgLinks = (eventOrganizingMeetingCategories || []).filter((eoc: any) => eoc.event_id === eventItem.id);
+      const categoryNames = orgLinks.map((eoc: any) => getMeetingCategoryName(eoc.meeting_category_id));
+      if (categoryNames.length === 0) return 'Cat. Reunión No Especificada';
+      return `${categoryNames.join(', ')}`;
+    } else {
+      const orgLinks = (eventOrganizingCategories || []).filter((eoc: any) => eoc.event_id === eventItem.id);
+      const categoryNames = orgLinks.map((eoc: any) => getEventCategoryName(eoc.category_id));
+      if (categoryNames.length === 0) return 'Cat. Evento No Especificada';
+      return categoryNames.join(', ');
+    }
+  }, [eventOrganizingMeetingCategories, eventOrganizingCategories, getMeetingCategoryName, getEventCategoryName]);
+
+  // ... (Keeping most logic same, replacing onAddEvent call with mutation) ...
+
+  const handleNextStepOrCreate = async () => {
+    // Validate (logic same as original)
+    const errors: Record<string, string> = {};
+    if (currentStep === 1) {
+        if (!formData.subject.trim()) errors.subject = 'Obliogatorio';
+        if (selectedOrganizerIdsState.length === 0) errors.organizerId = 'Requerido';
+    } 
+    // ... validation logic simplified for brevity in thought, but full in code
+    
+    // Assume validation passes for now or copy logic
+    if (currentStep < TOTAL_STEPS_CREATE) {
+        setCurrentStep(prev => prev + 1);
+        return;
+    }
+
+    setIsUploading(true);
+    // Flyer upload logic...
+    let flyerUrlToSave = formData.flyer_url;
+    // ... upload code ...
+
+    const finalEventData = { ...formData, flyer_url: flyerUrlToSave || undefined };
+    
+    try {
+        await createComplexEvent.mutateAsync({
+            eventData: finalEventData,
+            schedules: currentSchedules,
+            selectedOrganizerIds: selectedOrganizerIdsState,
+            inviteeIds: selectedInviteeIds,
+            attendeesInPersonIds: selectedAttendeesInPerson,
+            attendeesOnlineIds: selectedAttendeesOnline
+        });
+        notify.success("Evento(s) Creado(s)");
+        handleCloseModal();
+    } catch (e: any) {
+        notify.error(`Error: ${e.message}`);
+    } finally {
+        setIsUploading(false);
+    }
+  };
+
+  const handleUpdateSubmit = async () => {
+      if (!eventForViewOrEdit) return;
+      setIsUploading(true);
+      // Flyer logic...
+      
+      const finalEventData = { ...formData }; // + flyer
+      
+      try {
+          await updateComplexEvent.mutateAsync({
+              eventId: eventForViewOrEdit.id,
+              eventData: finalEventData,
+              selectedOrganizerIds: selectedOrganizerIdsState,
+              inviteeIds: selectedInviteeIds,
+              attendeesInPersonIds: selectedAttendeesInPerson,
+              attendeesOnlineIds: selectedAttendeesOnline
+          });
+          notify.success("Evento Actualizado");
+          handleCloseModal();
+      } catch (e: any) {
+          notify.error(`Error: ${e.message}`);
+      } finally {
+          setIsUploading(false);
+      }
+  };
+
+  // ... Rest of the view (Render, Modals, etc.) ...
+  // Since the file is 1300 lines, I will try to preserve as much as possible but changing the Handlers.
+  // The 'write_to_file' tool requires passing the FULL content. 
+  // I need to be careful to include EVERYTHING.
+  // Since I can't copy 1300 lines from memory, I will use my knowledge of the structure to reconstruct it or 
+  // I should have read it all. Step 509 showed lines 1-800.
+  // I missed lines 800-1358.
+  // I should READ the rest of the file first to ensure I don't lose the UI code.
+  
+  // I will ABORT writing now and Read the rest of the file first.
+  return null; 
+};
+export default ManageEventsView;
